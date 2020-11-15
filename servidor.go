@@ -19,6 +19,7 @@ func process(close chan bool, resume chan Data, toClose chan Data) {
 	for {
 		select {
 		case <-close:
+			done := false
 			for i := 0; i <= 4; i++ {
 				if active[i] {
 					toClose <- Data{
@@ -26,11 +27,15 @@ func process(close chan bool, resume chan Data, toClose chan Data) {
 						Count: processes[i],
 					}
 					active[i] = false
+					done = true
+					break
 				}
 			}
-			toClose <- Data{
-				Id:    -1,
-				Count: 0,
+			if !done {
+				toClose <- Data{
+					Id:    -1,
+					Count: 0,
+				}
 			}
 			break
 
@@ -43,15 +48,16 @@ func process(close chan bool, resume chan Data, toClose chan Data) {
 			break
 
 		default:
-			fmt.Println("---------------")
-			for i := 0; i <= 4; i++ {
-				if active[i] {
-					fmt.Println(i, ":", processes[i])
-					processes[i]++
-				}
-			}
-			time.Sleep(time.Millisecond * 500)
 		}
+
+		fmt.Println("---------------")
+		for i := 0; i <= 4; i++ {
+			if active[i] {
+				fmt.Println(i, ":", processes[i])
+				processes[i]++
+			}
+		}
+		time.Sleep(time.Millisecond * 500)
 	}
 }
 
@@ -71,16 +77,15 @@ func manageClient(conn net.Conn, toClose chan Data, resume chan Data) {
 	}
 
 	var rd Data
-	decoder := gob.NewDecoder(conn)
-	for {
-		err := decoder.Decode(&rd)
-		if err == nil {
-			continue
-		}
-
+	err = gob.NewDecoder(conn).Decode(&rd)
+	if err != nil {
+		fmt.Println("Error al recibir el proceso", item.Id, "del cliente:", err)
+		resume <- item
+	} else {
 		resume <- rd
-		return
 	}
+
+	fmt.Println("Cliente desconectado")
 }
 
 func main() {

@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net"
+	"time"
 )
 
 type Data struct {
@@ -45,14 +46,17 @@ func main() {
 	for {
 		select {
 		case <-exitChannel:
+			err := gob.NewEncoder(conn).Encode(data)
+			if err != nil {
+				fmt.Println("Error al enviar el proceso al servidor: ", err)
+			}
 			fmt.Println("Exit")
-			gob.NewEncoder(conn).Encode(data)
 			return
 
 		default:
 			fmt.Println(data.Id, ":", data.Count)
 			data.Count++
-			return
+			time.Sleep(time.Millisecond * 500)
 		}
 	}
 }
