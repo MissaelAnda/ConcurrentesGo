@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -14,24 +15,29 @@ type clientCommandId uint
 
 const (
 	MESSAGE clientCommandId = iota
+	FILE
 	QUIT
 )
 
 type ClientMessage struct {
-	Type clientCommandId
-	Text string
+	Type  clientCommandId
+	Text  string
+	Bytes []byte
 }
 
 type Message struct {
 	Id       uint
+	Type     clientCommandId
 	Nickname string
 	Text     string
+	Bytes    []byte
 }
 
-func listener(conn net.Conn, inputs chan Message) {
+func listener(conn net.Conn, messages chan Message) {
 	decoder := gob.NewDecoder(conn)
-	var msg Message
+
 	for {
+		msg := Message{}
 		err := decoder.Decode(&msg)
 
 		if err != nil {
@@ -43,7 +49,23 @@ func listener(conn net.Conn, inputs chan Message) {
 			continue
 		}
 
-		inputs <- msg
+		if msg.Type == FILE {
+			f, err := os.Create(msg.Text)
+
+			if err != nil {
+				fmt.Println("Error al crear el archivo", msg.Text, "enviado:", err)
+			} else {
+				_, err := f.Write(msg.Bytes)
+
+				if err != nil {
+					fmt.Println("Error al guardar los datos del archivo:", err)
+				}
+
+				f.Close()
+			}
+		}
+
+		messages <- msg
 	}
 }
 
@@ -51,58 +73,35 @@ type MessageManager struct {
 	Messages []Message
 }
 
-func (mm *MessageManager) Run(messages chan Message, signal chan string) {
-	for {
-		select {
-		case msg := <-messages:
-			mm.Messages = append(mm.Messages, msg)
-			fmt.Println()
-			for _, m := range mm.Messages {
-				fmt.Println(m.Nickname+":", m.Text)
-			}
-			fmt.Println()
-			break
-
-		case file := <-signal:
-			file += ".json"
-			f, err := os.Create(file)
-
-			if err != nil {
-				fmt.Println("Hubo un error al intentar guardar el chat:", err)
-				break
-			}
-
-			clientsLenght := len(mm.Messages)
-
-			f.WriteString("[\n")
-			for i, m := range mm.Messages {
-				str := "  {\n" +
-					"    \"Nickname\": \"" + m.Nickname + "\",\n" +
-					"    \"Message\": \"" + m.Text + "\"\n" +
-					"  }"
-
-				if i+1 != clientsLenght {
-					str += ","
+func (mm *MessageManager) Run(messages chan Message) {
+	for msg := range messages {
+		mm.Messages = append(mm.Messages, msg)
+		fmt.Println()
+		for _, m := range mm.Messages {
+			if m.Type == MESSAGE {
+				var nick string
+				if m.Id != 0 {
+					nick = m.Nickname
+				} else {
+					nick = "Tú"
 				}
-				str += "\n"
-
-				f.WriteString(str)
+				fmt.Println(nick+":", m.Text)
+			} else {
+				var nick string
+				if m.Id == 0 {
+					nick = "Has"
+				} else {
+					nick = m.Nickname + " ha"
+				}
+				fmt.Println(nick, "enviado un archivo:", m.Text)
 			}
-			f.WriteString("]\n")
-
-			f.Close()
-
-			fmt.Println("Se ha guardado el chat en '" + file + "'.")
-			break
-
-		default:
 		}
+		fmt.Println()
 	}
 }
 
 func main() {
 	messages := make(chan Message)
-	signal := make(chan string)
 	messageManager := MessageManager{
 		Messages: make([]Message, 0),
 	}
@@ -118,7 +117,7 @@ func main() {
 	fmt.Scan(&nickname)
 
 	go listener(conn, messages)
-	go messageManager.Run(messages, signal)
+	go messageManager.Run(messages)
 	defer conn.Close()
 
 	encoder := gob.NewEncoder(conn)
@@ -134,19 +133,20 @@ func main() {
 	for {
 		fmt.Println()
 		fmt.Println("1. Enviar mensaje")
-		fmt.Println("2. Guardar chat")
+		fmt.Println("2. Enviar archivo")
 		fmt.Println("0. Salir")
 		fmt.Scan(&op)
 
 		switch op {
 		case 1:
 			fmt.Print("> ")
-			input, _ := consoleReader.ReadString('\n')
-			input = input[:len(input)-1]
+			text, _ := consoleReader.ReadString('\n')
+			text = text[:len(text)-1]
 
 			err = encoder.Encode(ClientMessage{
-				Type: MESSAGE,
-				Text: input,
+				Type:  MESSAGE,
+				Text:  text,
+				Bytes: nil,
 			})
 
 			if err != nil {
@@ -154,8 +154,10 @@ func main() {
 			} else {
 				messages <- Message{
 					Id:       0,
+					Type:     MESSAGE,
 					Nickname: nickname,
-					Text:     input,
+					Text:     text,
+					Bytes:    nil,
 				}
 			}
 			break
@@ -165,13 +167,38 @@ func main() {
 			input, _ := consoleReader.ReadString('\n')
 			input = input[:len(input)-1]
 
-			signal <- input
+			data, err := ioutil.ReadFile(input)
+
+			if err != nil {
+				fmt.Println("Error al leer el archivo:", err)
+				break
+			}
+
+			input = strings.ReplaceAll(input, "../", "")
+
+			err = encoder.Encode(ClientMessage{
+				Type:  FILE,
+				Text:  input,
+				Bytes: data,
+			})
+
+			if err != nil {
+				fmt.Println("Error al enviar el archivo:", err)
+			} else {
+				messages <- Message{
+					Id:       0,
+					Type:     FILE,
+					Nickname: nickname,
+					Text:     input,
+				}
+			}
 			break
 
 		case 0:
 			err = encoder.Encode(ClientMessage{
-				Type: QUIT,
-				Text: "",
+				Type:  QUIT,
+				Text:  "",
+				Bytes: nil,
 			})
 
 			if err != nil {

@@ -1,0 +1,62 @@
+[
+  {
+    "Nickname": "Servidor",
+    "Message": "Se ha conectado 'Missael'."
+  },
+  {
+    "Nickname": "Servidor",
+    "Message": "Se ha conectado 'Paco'."
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Hola paco"
+  },
+  {
+    "Nickname": "Paco",
+    "Message": "Hola como estas?"
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Yo bien, y tu?"
+  },
+  {
+    "Nickname": "Paco",
+    "Message": "Preocupado, no se como hacer el servidor en GO"
+  },
+  {
+    "Nickname": "Paco",
+    "Message": "Como lo hiciste tu?"
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Te paso como lo hice"
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Archivo enviado: 'servidor.go'"
+  },
+  {
+    "Nickname": "Paco",
+    "Message": "Wow, gracias"
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Denada"
+  },
+  {
+    "Nickname": "Paco",
+    "Message": "Voy a revisarlo, luego te hablo"
+  },
+  {
+    "Nickname": "Servidor",
+    "Message": "Se ha desconectado 'Paco'."
+  },
+  {
+    "Nickname": "Missael",
+    "Message": "Se ha mata'o paco"
+  },
+  {
+    "Nickname": "Servidor",
+    "Message": "Se ha desconectado 'Missael'."
+  }
+]

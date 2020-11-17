@@ -1,18 +1,22 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
+	"os"
 )
 
 type MessageChannel chan Message
 
 type Message struct {
 	Id       uint
+	Type     clientCommandId
 	Nickname string
 	Text     string
+	Bytes    []byte
 }
 
 type commandID uint
@@ -20,6 +24,7 @@ type commandID uint
 const (
 	CONECTION_FAILED commandID = iota
 	CONECTION_STABLISHED
+	CLIENT_FILE
 	CLIENT_MESSAGE
 	CLIENT_QUIT
 )
@@ -29,13 +34,15 @@ type ServerMessage struct {
 	ClientID uint
 	Nickname string
 	Text     string
+	Bytes    []byte
 }
 
 type ServerChannel chan ServerMessage
 
 type ClientsManager struct {
-	Clients []*Client
-	Output  ServerChannel
+	Clients  []*Client
+	Output   ServerChannel
+	Messages []Message
 }
 
 func (cm *ClientsManager) RemoveClient(id uint) {
@@ -62,6 +69,8 @@ func (c *ClientsManager) Append(client *Client) {
 }
 
 func (cm *ClientsManager) SendMessage(msg Message) {
+	cm.Messages = append(cm.Messages, msg)
+
 	for _, c := range cm.Clients {
 		if c.SignedUp && c.Id != msg.Id {
 			c.Input <- msg
@@ -69,7 +78,7 @@ func (cm *ClientsManager) SendMessage(msg Message) {
 	}
 }
 
-func server() {
+func server(clientsManager *ClientsManager) {
 	ln, err := net.Listen("tcp", ":8080")
 
 	if err != nil {
@@ -79,15 +88,14 @@ func server() {
 
 	defer ln.Close()
 
-	var idCounter uint = 0
-	clientsManager := ClientsManager{
-		Clients: make([]*Client, 0),
-		Output:  make(ServerChannel),
-	}
+	var idCounter uint = 1
 
-	go messageDispatcher(&clientsManager)
+	go messageDispatcher(clientsManager)
 
-	fmt.Println("Servidor iniciado...")
+	fmt.Println("Servidor iniciado")
+	fmt.Println("1. Mostrar registro de mensajes/archivos")
+	fmt.Println("2. Guardar registro de mensajes/archivos")
+	fmt.Println("3. Apagar servidor")
 
 	for {
 		conn, err := ln.Accept()
@@ -125,8 +133,10 @@ func messageDispatcher(clientManager *ClientsManager) {
 			fmt.Println("Se ha conectado el usuario", msg.Nickname)
 			clientManager.SendMessage(Message{
 				Id:       msg.ClientID,
+				Type:     MESSAGE,
 				Nickname: "Servidor",
 				Text:     "Se ha conectado '" + msg.Nickname + "'.",
+				Bytes:    nil,
 			})
 			break
 
@@ -134,28 +144,124 @@ func messageDispatcher(clientManager *ClientsManager) {
 			fmt.Println("Se ha desconectado el usuario", msg.Nickname)
 			clientManager.SendMessage(Message{
 				Id:       msg.ClientID,
+				Type:     MESSAGE,
 				Nickname: "Servidor",
 				Text:     "Se ha desconectado '" + msg.Nickname + "'.",
+				Bytes:    nil,
 			})
 			clientManager.RemoveClient(msg.ClientID)
 			break
 
 		case CLIENT_MESSAGE:
 			fmt.Println(msg.ClientID, "-", msg.Nickname+":", msg.Text)
+
 			clientManager.SendMessage(Message{
 				Id:       msg.ClientID,
+				Type:     MESSAGE,
 				Nickname: msg.Nickname,
 				Text:     msg.Text,
+				Bytes:    nil,
+			})
+			break
+
+		case CLIENT_FILE:
+			fmt.Println(msg.ClientID, "-", msg.Nickname, "ha enviado un archivo:", msg.Text)
+
+			clientManager.SendMessage(Message{
+				Id:       msg.ClientID,
+				Type:     FILE,
+				Nickname: msg.Nickname,
+				Text:     msg.Text,
+				Bytes:    msg.Bytes,
 			})
 		}
 	}
 }
 
-func main() {
-	go server()
+func saveToFile(file string, msgs []Message) {
+	file += ".json"
+	f, err := os.Create(file)
 
-	var input string
-	fmt.Scan(&input)
+	if err != nil {
+		fmt.Println("Hubo un error al intentar guardar el chat:", err)
+		return
+	}
+
+	clientsLenght := len(msgs)
+
+	f.WriteString("[\n")
+	for i, m := range msgs {
+		var message string
+		if m.Type == FILE {
+			message = "Archivo enviado: '" + m.Text + "'"
+		} else {
+			message = m.Text
+		}
+
+		str := "  {\n" +
+			"    \"Nickname\": \"" + m.Nickname + "\",\n" +
+			"    \"Message\": \"" + message + "\"\n" +
+			"  }"
+
+		if i+1 != clientsLenght {
+			str += ","
+		}
+		str += "\n"
+
+		f.WriteString(str)
+	}
+	f.WriteString("]\n")
+
+	f.Close()
+
+	fmt.Println("Se ha guardado el chat en '" + file + "'.")
+}
+
+func main() {
+	clientsManager := ClientsManager{
+		Clients:  make([]*Client, 0),
+		Output:   make(ServerChannel),
+		Messages: make([]Message, 0),
+	}
+
+	go server(&clientsManager)
+
+	var op int
+	consoleReader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Scan(&op)
+
+		switch op {
+		case 1:
+			fmt.Println()
+			for _, m := range clientsManager.Messages {
+				var msg string
+				if m.Type == FILE {
+					msg = "Envio el archivo: '" + m.Text + "'."
+				} else {
+					msg = m.Text
+				}
+				fmt.Println(m.Nickname, "-", msg)
+			}
+			fmt.Println()
+			break
+
+		case 2:
+			fmt.Print("File name: ")
+			input, _ := consoleReader.ReadString('\n')
+			input = input[:len(input)-1]
+
+			// Save messages
+			saveToFile(input, clientsManager.Messages)
+			break
+
+		case 3:
+			return
+
+		default:
+		}
+	}
+
 }
 
 // Client Data
@@ -172,12 +278,14 @@ type clientCommandId uint
 
 const (
 	MESSAGE clientCommandId = iota
+	FILE
 	QUIT
 )
 
 type ClientMessage struct {
-	Type clientCommandId
-	Text string
+	Type  clientCommandId
+	Text  string
+	Bytes []byte
 }
 
 func (c *Client) Run() {
@@ -210,8 +318,8 @@ func (c *Client) Run() {
 
 	go c.Sender()
 
-	var msg ClientMessage
 	for {
+		msg := ClientMessage{}
 		err := decoder.Decode(&msg)
 
 		if err != nil {
@@ -248,6 +356,16 @@ func (c *Client) Run() {
 			}
 			c.Close()
 			return
+
+		case FILE:
+			c.Output <- ServerMessage{
+				Type:     CLIENT_FILE,
+				ClientID: c.Id,
+				Nickname: c.Nickname,
+				Text:     msg.Text,
+				Bytes:    msg.Bytes,
+			}
+			break
 
 		default:
 		}
