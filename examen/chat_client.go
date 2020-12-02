@@ -76,28 +76,32 @@ type MessageManager struct {
 func (mm *MessageManager) Run(messages chan Message) {
 	for msg := range messages {
 		mm.Messages = append(mm.Messages, msg)
-		fmt.Println()
-		for _, m := range mm.Messages {
-			if m.Type == MESSAGE {
-				var nick string
-				if m.Id != 0 {
-					nick = m.Nickname
-				} else {
-					nick = "Tú"
-				}
-				fmt.Println(nick+":", m.Text)
-			} else {
-				var nick string
-				if m.Id == 0 {
-					nick = "Has"
-				} else {
-					nick = m.Nickname + " ha"
-				}
-				fmt.Println(nick, "enviado un archivo:", m.Text)
-			}
-		}
-		fmt.Println()
+		mm.PrintMessages()
 	}
+}
+
+func (mm *MessageManager) PrintMessages() {
+	fmt.Println()
+	for _, m := range mm.Messages {
+		if m.Type == MESSAGE {
+			var nick string
+			if m.Id != 0 {
+				nick = m.Nickname
+			} else {
+				nick = "Tú"
+			}
+			fmt.Println(nick+":", m.Text)
+		} else {
+			var nick string
+			if m.Id == 0 {
+				nick = "Has"
+			} else {
+				nick = m.Nickname + " ha"
+			}
+			fmt.Println(nick, "enviado un archivo:", m.Text)
+		}
+	}
+	fmt.Println()
 }
 
 func main() {
@@ -134,6 +138,7 @@ func main() {
 		fmt.Println()
 		fmt.Println("1. Enviar mensaje")
 		fmt.Println("2. Enviar archivo")
+		fmt.Println("3. Ver mensajes")
 		fmt.Println("0. Salir")
 		fmt.Scan(&op)
 
@@ -163,7 +168,7 @@ func main() {
 			break
 
 		case 2:
-			fmt.Print("Nombre del archivo: ")
+			fmt.Print("Nombre del archivo (con la direccion): ")
 			input, _ := consoleReader.ReadString('\n')
 			input = input[:len(input)-1]
 
@@ -174,7 +179,11 @@ func main() {
 				break
 			}
 
-			input = strings.ReplaceAll(input, "../", "")
+			last := strings.LastIndex("/", input)
+			if last < 0 {
+				last = 0
+			}
+			input = input[last:]
 
 			err = encoder.Encode(ClientMessage{
 				Type:  FILE,
@@ -192,6 +201,10 @@ func main() {
 					Text:     input,
 				}
 			}
+			break
+
+		case 3:
+			messageManager.PrintMessages()
 			break
 
 		case 0:
